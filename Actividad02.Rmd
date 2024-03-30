@@ -1,0 +1,1030 @@
+---
+title: Evaluación de la Oferta Inmobiliaria Urbana
+author: Alvaro Pérez Niño
+date: Marzo de 2024
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+    css: custom_styles.css
+---
+
+# Problemática
+
+Maria comenzó como agente de bienes raíces en Cali hace 10 años. Después de laborar dos años para una empresa nacional, se traslado a Bogotá y trabajó para otra agencia de bienes raíces. Sus amigos y familiares la convencieron de que con su experiencia y conocimientos del negocio debía abrir su propia agencia. Terminó por adquirir la licencia de intermediario y al poco tiempo fundó su propia compañía, C&A (Casas y Apartamentos) en Cali. Santiago y Lina, dos vendedores de la empresa anterior aceptaron trabajar en la nueva compaña. En la actualidad ocho agentes de bienes raíces colaboran con ella en C&A.
+
+Actualmente las ventas de bienes raíces en Cali se han visto disminuidas de manera significativa en lo corrido del año. Durante este periodo muchas instituciones bancarias de ahorro y vivienda están prestando grandes sumas de dinero para la industria y la construcción comercial y residencial. Cuando el efecto producto de las tensiones políticas y sociales disminuya, se espera que la actividad económica de este sector se reactive.
+
+Hace dos días, María recibió una carta solicitando asesoría para la compra de dos viviendas por parte de una compañía internacional que desea ubicar a dos de sus empleados con sus familias en la ciudad. Las solicitudes incluyen las siguientes condiciones:
+
+| Características     | Vivienda 01	| Vivienda 02 |
+|---------------------|-------------|-------------|
+| Tipo	              | Casa	      | Apartamento |
+| Área construida	    | 200	        | 300         |
+| Parqueaderos	      | 1	          | 3           |
+| Baños	              | 2	          | 3           |
+| Habitaciones	      | 4	          | 5           |
+| Estrato	            | 4 o 5	      | 5 o 6       |
+| Zona	              | Norte	      | Sur         |
+| Crédito preaprobado |	350 millones|	850 millones|
+
+Ayude a María a responder la solicitud, mediante técnicas modelación que usted conoce. Ella requiere le envíe un informe ejecutivo donde analice los dos casos y sus recomendaciones (Informe). Como soporte del informe debe anexar las estimaciones, validaciones y comparación de modelos requeridos (Anexos) .
+
+## Pasos requeridos para la obtención de los resultados
+
+1. Realice un filtro a la base de datos e incluya solo las ofertas de : base1: casas, de la zona norte de la ciudad. Presente los primeros 3 registros de las bases y algunas tablas que comprueben la consulta. (Adicional un mapa con los puntos de las bases. Discutir si todos los puntos se ubican en la zona correspondiente o se presentan valores en otras zonas, por que?).
+
+2. Realice un análisis exploratorio de datos enfocado en la correlación entre la variable respuesta (precio de la casa) en función del área construida, estrato, numero de baños, numero de habitaciones y zona donde se ubica la vivienda. Use gráficos interactivos con el paquete plotly e interprete los resultados.
+
+3. Estime un modelo de regresión lineal múltiple con las variables del punto anterior (precio = f(área construida, estrato, número de cuartos, número de parqueaderos, número de baños ) ) e interprete los coeficientes si son estadísticamente significativos. Las interpretaciones deber están contextualizadas y discutir si los resultados son lógicos. Adicionalmente interprete el coeficiente R2
+ y discuta el ajuste del modelo e implicaciones (que podrían hacer para mejorarlo).
+
+4. Realice la validación de supuestos del modelo e interprete los resultados (no es necesario corregir en caso de presentar problemas, solo realizar sugerencias de que se podría hacer).
+
+5. Con el modelo identificado debe predecir el precio de la vivienda con las características de la primera solicitud.
+
+6. Con las predicciones del modelo sugiera potenciales ofertas que responda a la solicitud de la vivienda 1. Tenga encuentra que la empresa tiene crédito pre-aprobado de máximo 350 millones de pesos. Realice un análisis y presente en un mapa al menos 5 ofertas potenciales que debe discutir.
+
+7. Realice los pasos del 1 al 6. Para la segunda solicitud que tiene un crédito pre-aprobado por valor de $850 millones.
+
+## Entregable
+
+Informe ejecutivo con anexos soporte de las estimaciones publicado en RPubs - el enlace debe entregarse en la plataforma Bs.
+
+
+***
+
+
+# Solución
+
+## 1. Preprocesamiento de datos
+
+### 1.1 Gestión de las bibliotecas necesarias
+
+```{r D00, echo=TRUE}
+# Gestión de las bibliotecas necesarias
+library(mice)
+library(knitr)
+library(leaflet)
+library(dplyr)
+library(ggplot2)
+library(plotly)
+library(corrplot)
+library(lmtest)
+library(car)
+```
+
+### 1.2 Lectura del Dataset
+
+```{r D01, echo=TRUE}
+# Lectura del Dataset
+url <- "https://raw.githubusercontent.com/aperezn298/DatasetsPUJC/main/vivienda_faltantes.csv"
+data_vivienda <- read.csv(url, sep = ",", header = TRUE)
+head(data_vivienda)
+```
+
+### 1.3 Análisis exploratorio inicial
+
+```{r D02, echo=TRUE}
+# Análisis exploratorio inicial
+md.pattern(data_vivienda, rotate.names = TRUE)
+```
+
+### 1.4 Imputación de registros para completar los datos faltantes
+
+```{r D03, echo=TRUE}
+# Número de pisos
+media_piso <- mean(data_vivienda$piso
+                   [data_vivienda$piso != 0 & !is.na(data_vivienda$piso)], 
+                   na.rm = TRUE)
+media_piso <- round(media_piso)
+data_vivienda <- data_vivienda %>% mutate(
+  piso = ifelse (piso == 0 | is.na(piso), media_piso, piso))
+
+# Estrato socioeconomico
+media_estrato <- mean(data_vivienda$estrato
+                      [data_vivienda$estrato != 0 & !is.na(data_vivienda$estrato)], 
+                      na.rm = TRUE)
+media_estrato <- round(media_estrato)
+data_vivienda <- data_vivienda %>% mutate(
+  estrato = ifelse(estrato == 0 | is.na(estrato), media_estrato, estrato))
+
+# Número de parqueaderos
+media_parquea <- mean(data_vivienda$parquea
+                      [data_vivienda$parquea != 0 & !is.na(data_vivienda$parquea)], 
+                      na.rm = TRUE)
+media_parquea <- round(media_parquea)
+data_vivienda <- data_vivienda %>% mutate(
+  parquea = ifelse(parquea == 0 | is.na(parquea), media_parquea, parquea))
+
+# Número de baños
+media_banios <- mean(data_vivienda$banios
+                     [data_vivienda$banios != 0 & !is.na(data_vivienda$banios)], 
+                     na.rm = TRUE)
+media_banios <- round(media_banios)
+data_vivienda <- data_vivienda %>% mutate(
+  banios = ifelse(banios == 0 | is.na(banios), media_banios, banios))
+
+# Número de habitaciones
+media_habitac <- mean(data_vivienda$habitac
+                      [data_vivienda$habitac != 0 & !is.na(data_vivienda$habitac)], 
+                      na.rm = TRUE)
+media_habitac <- round(media_habitac)
+data_vivienda <- data_vivienda %>% mutate(
+  habitac = ifelse(habitac == 0 | is.na(habitac), media_habitac, habitac))
+
+# Eliminar los registros incompletos
+data_vivienda <- data_vivienda[complete.cases(data_vivienda), ]
+```
+
+### 1.5 Análisis exploratorio Final - dataset Normalizado
+
+```{r D04, echo=TRUE}
+# Análisis exploratorio final
+md.pattern(data_vivienda, rotate.names = TRUE)
+```
+
+
+***
+
+<br>
+
+## 2. Modelo Estadístico para la Vivienda 01
+
+| Características     | Vivienda 01	|
+|---------------------|-------------|
+| Tipo	              | Casa	      |
+| Área construida	    | 200	        |
+| Parqueaderos	      | 1	          |
+| Baños	              | 2	          |
+| Habitaciones	      | 4	          |
+| Estrato	            | 4 o 5	      |
+| Zona	              | Norte	      |
+| Crédito preaprobado |	350 millones|
+
+### 2.1 Filtrado del dataset (Casa - Zona Norte)
+
+```{r D05, echo=TRUE}
+# Filtrado del dataset (Casa - Zona Norte)
+data_vivienda_tipoUno <- subset(data_vivienda, tipo == "Casa" & 
+                                  zona == "Zona Norte")
+```
+
+#### 2.1.1 Verificación de datos únicos (Casa - Zona Norte)
+
+```{r D06, echo=TRUE}
+# Verificación de datos únicos
+unique(data_vivienda_tipoUno$tipo)
+unique(data_vivienda_tipoUno$zona)
+```
+
+#### 2.1.2 Tabla de datos filtrados (Casa - Zona Norte)
+
+```{r D07, echo=FALSE}
+# Tabla de datos filtrados (Casa - Zona Norte)
+vivienda_tipoUno = select(data_vivienda_tipoUno, -id, -barrio, -longitud, -latitud)
+```
+
+```{r D08, echo=TRUE}
+# Tabla de datos filtrados (Casa - Zona Norte)
+kable(head(vivienda_tipoUno,3), format = "markdown")
+```
+
+#### 2.1.3 Gráfico de mapa de los datos filtrados (Casa - Zona Norte)
+
+```{r D09, echo=TRUE}
+# Gráfico de mapa de los datos filtrados (Casa - Zona Norte)
+data <- data.frame(
+  zona = data_vivienda_tipoUno$zona,
+  barrio = data_vivienda_tipoUno$barrio,
+  longitud = data_vivienda_tipoUno$longitud,
+  latitud = data_vivienda_tipoUno$latitud
+)
+
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~barrio, radius = 5,
+                   color = ~case_when(
+                     zona == "Zona Norte" ~ "#1E6BB8",
+                     TRUE ~ "gray"
+                   )) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+
+map
+```
+
+**Análisis:** El conjunto de datos filtrados por los criterios de zona norte y tipo de vivienda casa presenta una cantidad de registros etiquetados de manera incorrecta en relación a los valores de las propiedades de barrio y zona, los cuales no corresponden a las coordenadas de latitud y longitud presentes.  Estas inconsistencias pueden afectar la credibilidad de la inmobiliaria y generar reprocesos con los clientes; debido a que la ubicación de la vivienda es un factor de influencia a la hora de la compra.
+
+Por lo anterior, se procederá a eliminar las viviendas que no se encuentren en la zona norte de la ciudad del conjunto de datos filtrados, las cuales se han identificados por tener una latitud mayor a 3.44846 y una longitud mayor a -76.535507, según la información catastral del país.
+
+```{r D10, echo=TRUE}
+# Eliminar las viviendas que no se encuentren en la zona norte
+data_vivienda_tipoUno_filtrado <- data_vivienda_tipoUno[
+  data_vivienda_tipoUno$longitud >= -76.535507,]
+data_vivienda_tipoUno_filtrado <- data_vivienda_tipoUno_filtrado[
+  data_vivienda_tipoUno_filtrado$latitud >= 3.44846,]
+
+data <- data.frame(
+  zona = data_vivienda_tipoUno_filtrado$zona,
+  barrio = data_vivienda_tipoUno_filtrado$barrio,
+  longitud = data_vivienda_tipoUno_filtrado$longitud,
+  latitud = data_vivienda_tipoUno_filtrado$latitud
+)
+
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~barrio, radius = 5,
+                   color = ~case_when(
+                     zona == "Zona Norte" ~ "#1E6BB8",
+                     TRUE ~ "gray"
+                   )) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+map
+```
+
+
+### 2.2 Análisis exploratorio
+
+**2.2.1 Gráfico del Precio de la vivienda vs Área construida**
+
+```{r D11, echo=TRUE}
+# Precio de la vivienda vs Área construida
+variable1 <- data_vivienda_tipoUno_filtrado$preciom
+variable2 <- data_vivienda_tipoUno_filtrado$areaconst
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Área construida"))
+scatter_plot
+```
+
+**2.2.2 Gráfico del Precio de la vivienda vs Estrato**
+
+```{r D12, echo=TRUE}
+# Precio de la vivienda vs Estrato
+variable1 <- data_vivienda_tipoUno_filtrado$preciom
+variable2 <- data_vivienda_tipoUno_filtrado$estrato
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Estrato"))
+scatter_plot
+```
+
+**2.2.3 Gráfico del Precio de la vivienda vs Número de baños**
+
+```{r D13, echo=TRUE}
+# Precio de la vivienda vs Número de baños
+variable1 <- data_vivienda_tipoUno_filtrado$preciom
+variable2 <- data_vivienda_tipoUno_filtrado$banios
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Número de baños"))
+scatter_plot
+```
+
+**2.2.4 Gráfico del Precio de la vivienda vs Número de habitaciones**
+
+```{r D14, echo=TRUE}
+# Precio de la vivienda vs Número de habitaciones
+variable1 <- data_vivienda_tipoUno_filtrado$preciom
+variable2 <- data_vivienda_tipoUno_filtrado$habitac
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Número de habitaciones"))
+scatter_plot
+```
+
+**2.2.5 Gráfico del Precio de la vivienda vs Zona**
+
+```{r D15, echo=TRUE}
+# Precio de la vivienda vs Zona
+data <- data.frame(
+  precio = data_vivienda_tipoUno_filtrado$preciom,
+  zona = data_vivienda_tipoUno_filtrado$zona,
+  barrio = data_vivienda_tipoUno_filtrado$barrio,
+  longitud = data_vivienda_tipoUno_filtrado$longitud,
+  latitud = data_vivienda_tipoUno_filtrado$latitud
+)
+
+# Precios y colores
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+
+# Calcular tamaños de radio basados en los precios
+tamanos_radio <- rep(5, nrow(data))  # Tamaño predeterminado
+for (i in 1:(length(precios)-1)) {
+  tamanos_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- i*2 + 5
+}
+
+# Colores basados en los precios
+colores_radio <- rep(colores[1], nrow(data))
+for (i in 1:(length(precios)-1)) {
+  colores_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- colores[i]
+}
+
+# Crear el mapa
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~precio, radius = ~tamanos_radio,
+                   color = ~colores_radio) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+
+map
+```
+
+**2.2.6 Mapa de correlaciones**
+
+```{r D16, echo=TRUE}
+# Mapa de correlaciones
+matrizcor <- cor(data_vivienda_tipoUno_filtrado[, c("preciom", "areaconst", 
+                                                    "estrato","banios", "habitac")])
+corrplot (matrizcor, method = "color", addCoef.col = "#FFC300")
+
+```
+
+Teniendo en cuenta el análisis exploratorio y el mapa de correlaciones, se observa una asociación directa entre el precio de las viviendas y dos factores claves: el área construida y el estrato socioeconómico. Esta relación se destaca por su alta correlación, con un 73% entre el precio y el área construida, seguido de un 63% entre el precio y el estrato socioeconómico. Además, se identifica una conexión significativa entre la cantidad de baños y el número de habitaciones, con una correlación del 61%. Estas correlaciones destacadas ofrecen una comprensión valiosa de los factores que influyen en los precios de las viviendas, lo que puede ser fundamental para la toma de decisiones tanto en el ámbito inmobiliario como para los clientes.
+
+
+### 2.3 Modelo de Regresión Lineal Múltiple
+
+(precio = f(área construida, estrato, número de cuartos, número de parqueaderos, número de baños ) ) 
+
+```{r D17, echo=TRUE}
+# Estimación de un modelo de regresión lineal múltiple
+modelo_VT01 <- lm(preciom ~ areaconst + estrato + habitac + parquea + banios, 
+                  data = data_vivienda_tipoUno_filtrado)
+# Resumen del modelo
+summary(modelo_VT01)
+```
+
+Este análisis de resultados se basa en un modelo de regresión lineal múltiple que intenta predecir el precio de una vivienda (preciom) utilizando múltiples variables predictoras, como el área construida (areaconst), el estrato, el número de habitaciones (habitac), el número de plazas de aparcamiento (parquea), y el número de baños (banios).
+
+#### **Coeficientes del Modelo:**
+- Intercepto (Intercept): -224.75180
+- Área construida (areaconst): 0.69178
+- Estrato: 75.46689
+- Número de habitaciones (habitac): 3.18316
+- Número de parqueaderos (parquea): 30.80604
+- Número de baños (banios): 19.29435
+
+#### **Interpretación de los Coeficientes:**
+**Intercepto:** Representa el valor esperado de la variable de respuesta (precio de la vivienda) cuando todas las variables predictoras son cero. En este caso, indica que el precio esperado de la vivienda es de -224.75 millones de pesos, pero como es negativo, puede ser una indicación de que se necesitan otras variables o transformaciones para mejorar el modelo.
+
+**Área construida (areaconst):** Por cada unidad adicional de área construida, el precio de la vivienda aumenta en promedio en 0.69178 millones de pesos, manteniendo las otras variables constantes.
+
+**Estrato:** Cada incremento en una unidad del estrato está asociado con un aumento de $75.47 en el precio de la vivienda, manteniendo las demás variables constantes.
+
+**Número de habitaciones (habitac):** Este coeficiente indica que el número de habitaciones no tiene una relación significativa con el precio de la vivienda, dado que el p-valor es mayor que 0.05. Por lo tanto, no se puede concluir que el número de habitaciones tenga un impacto significativo en el precio.
+
+**Número de parqueaderos (parquea):** Por cada parqueadero adicional, el precio de la vivienda aumenta en promedio en 30.81 millones de pesos, manteniendo las otras variables constantes.
+
+**Número de baños (banios):** Por cada baño adicional, el precio de la vivienda aumenta en promedio en 19.29 millones de pesos, manteniendo las otras variables constantes.
+
+#### **Estadísticas del Modelo:**
+**Residual Standard Error: 133.9.** Es una medida de la dispersión de los residuos alrededor de la línea de regresión. Indica cuánto varían los puntos de datos reales de las predicciones del modelo.
+
+**R-cuadrado Múltiple (Multiple R-squared): 0.6632.** Esto significa que aproximadamente el 66.32% de la variabilidad en el precio de la vivienda puede ser explicada por las variables predictoras incluidas en el modelo.
+
+**R-cuadrado Ajustado (Adjusted R-squared): 0.6588.** Es similar al R-cuadrado múltiple, pero ajustado para el número de predictores en el modelo. Ayuda a evitar la sobreestimación del rendimiento del modelo cuando se agregan más variables predictoras.
+
+**Estadístico F y p-valor:** El estadístico F prueba si al menos una de las variables predictoras tiene un efecto significativo en la variable de respuesta. En este caso, el valor extremadamente bajo del p-valor (< 2.2e-16) indica que al menos una de las variables predictoras es significativa en la predicción del precio de la vivienda.
+
+
+En resumen, el modelo parece ser significativo en general, con un R-cuadrado considerable. Sin embargo, algunas variables predictoras que podrían no ser significativas individualmente, como el número de habitaciones. Se sugiere realizar un análisis más detallado de las variables y considerar posibles transformaciones o ajustes en el modelo para mejorar su desempeño.
+
+### 2.4 Validación de supuestos del modelo
+
+**2.4.1 Linealidad y Homocedasticidad de los Residuos:**
+
+```{r D18, echo=TRUE}
+# Gráfico de valores ajustados vs residuos
+predicted <- predict(modelo_VT01)
+residuals <- residuals(modelo_VT01)
+
+plot_ly() %>%
+  add_trace(x = ~predicted, y = ~residuals, type = "scatter", mode = "markers", 
+            marker = list(color = "#1E6BB8")) %>%
+  add_trace(x = predicted, y = rep(0, length(predicted)),
+            type = "scatter", mode = "lines", line = list(color = "#04AA6D", 
+                                                          dash = "dash")) %>%
+  layout(title = "Gráfico de Valores Ajustados vs Residuos",
+         xaxis = list(title = "Valores Ajustados"),
+         yaxis = list(title = "Residuos"))
+
+# Prueba de Breusch-Pagan
+library(lmtest)
+bptest(modelo_VT01)
+```
+
+Esta prueba evaluó si existe heterocedasticidad en los residuos del modelo. En este caso, el valor estadístico (BP) es 71.812 con 5 grados de libertad y un valor p muy pequeño (4.299e-14), lo que sugiere evidencia significativa de heterocedasticidad en los residuos.
+
+**2.4.2 Normalidad de los Residuos:**
+
+```{r D19, echo=TRUE}
+# Normalidad de los Residuos
+shapiro.test(residuals)
+```
+
+Esta prueba evaluó si los residuos se distribuyen normalmente. El valor p es menor que 0.05 (2.2e-16), lo que indica que los residuos no siguen una distribución normal.
+
+**2.4.3 Supuesto de Varianza Constante:**
+
+```{r D20, echo=TRUE}
+# Supuesto de Varianza Constante
+gqtest(modelo_VT01)
+```
+
+Esta prueba evaluó si la varianza de los errores es constante en todo el rango de los datos. El valor p es menor que 0.05 (2.2e-16), lo que sugiere que hay evidencia de que la varianza no es constante.
+
+**2.4.4 Independencia de los errores:**
+
+```{r D21, echo=TRUE}
+# Independencia de los errores
+dwtest(modelo_VT01)
+```
+
+Esta prueba evaluó si hay autocorrelación en los residuos. El valor p es mayor que 0.05 (0.6383), lo que sugiere que no hay evidencia de autocorrelación en los residuos.
+
+**2.4.4 Multicolinealidad:**
+
+```{r D22, echo=TRUE}
+# Multicolinealidad
+par(mfrow = c(2, 2))
+plot(modelo_VT01)
+# Factores de inflación de la varianza (VIF)
+vif(modelo_VT01)
+```
+
+### 2.5 Predección del precio de la vivienda
+
+```{r D23, echo=TRUE}
+# Para estrato = 4
+nueva_vivienda_est_4 <- data.frame(
+  areaconst = 200,
+  parquea = 1,
+  banios = 2,
+  habitac = 4,
+  estrato = 4
+)
+
+# Para estrato = 5
+nueva_vivienda_est_5 <- data.frame(
+  areaconst = 200,
+  parquea = 1,
+  banios = 2,
+  habitac = 4,
+  estrato = 5
+)
+
+#  obtener las predicciones del precio de la vivienda utilizando el modelo
+prediccion_est_4 <- predict(modelo_VT01, newdata = nueva_vivienda_est_4, 
+                            interval = "confidence")
+print(prediccion_est_4)
+prediccion_est_5 <- predict(modelo_VT01, newdata = nueva_vivienda_est_5,
+                            interval = "confidence")
+print(prediccion_est_5)
+```
+
+### 2.6 Potenciales ofertas que responda a la solicitud de la vivienda 1
+
+```{r D24, echo=TRUE}
+
+# Filtrar el conjunto de datos con los criterios proporcionados
+ofertas_vivienda_uno <- subset(data_vivienda_tipoUno_filtrado,
+                               areaconst <= 200 &
+                               parquea <= 1 &
+                               banios <= 2 &
+                               habitac <= 4 &
+                               estrato <=5 &
+                               preciom <= 350)
+
+# Cantidad de viviendas que cumplen los criterios proporcionados
+total_observaciones1 <- nrow(ofertas_vivienda_uno)
+print(total_observaciones1)
+
+ofertas_tipo_uno = select(ofertas_vivienda_uno, -id, -zona, -tipo, -longitud, 
+                          -latitud)
+ofertas_tipo_uno <- ofertas_tipo_uno[order(ofertas_tipo_uno$preciom, 
+                                           ofertas_tipo_uno$areaconst, 
+                                           decreasing = TRUE),]
+kable(head(ofertas_tipo_uno,5), format = "markdown")
+```
+
+```{r D25, echo=FALSE}
+# Viviendas para la Oferta 01
+data <- data.frame(
+  precio = ofertas_vivienda_uno$preciom,
+  barrio = ofertas_vivienda_uno$barrio,
+  longitud = ofertas_vivienda_uno$longitud,
+  latitud = ofertas_vivienda_uno$latitud
+)
+
+# Precios y colores
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+
+# Calcular tamaños de radio basados en los precios
+tamanos_radio <- rep(5, nrow(data))  # Tamaño predeterminado
+for (i in 1:(length(precios)-1)) {
+  tamanos_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- i*2 + 5
+}
+
+# Colores basados en los precios
+colores_radio <- rep(colores[1], nrow(data))
+for (i in 1:(length(precios)-1)) {
+  colores_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- colores[i]
+}
+
+# Crear el mapa
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~precio, radius = ~tamanos_radio,
+                   color = ~colores_radio) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+map
+```
+
+**Análisis:** Despues de analizar el modelo de regresión lineal múltiple detenidamente conforme a las necesidades del usuario que realizó la solicitud de vivienda número uno, se ha identificado que la propiedad que mejor se adapta a sus requerimientos es la casa con el iidentificador **2808**, ubicada en el barrio Calima de estrato tres de la zona norte. Esta casa de un piso ofrece cuatro habitaciones, dos baños y un parqueadero, con una extensión total de 196 metros cuadrados. Su valor es de 270 millones de pesos. Aunque se han evaluado otros bienes inmuebles que cumplen con la mayoría de los criterios (*22 inmuebles*), estos difieren en estrato y en menor medida en área construida. Esta situación se debe a la ausencia de una propiedad en la base de datos que cumpla con todos los requisitos especificados.
+
+***
+
+<br>
+
+## 3. Modelo Estadístico para la Vivienda 02
+
+| Características     | Vivienda 02	|
+|---------------------|-------------|
+| Tipo	              | Apartamento |
+| Área construida	    | 300	        |
+| Parqueaderos	      | 3	          |
+| Baños	              | 3	          |
+| Habitaciones	      | 5	          |
+| Estrato	            | 5 o 6	      |
+| Zona	              | Sur 	      |
+| Crédito preaprobado |	850 millones|
+
+### 3.1 Filtrado del dataset (Apartamento - Zona Sur)
+
+```{r D26, echo=TRUE}
+# Filtrado del dataset (Apartamento - Zona Sur)
+data_vivienda_tipoDos <- subset(data_vivienda, tipo == "Apartamento" & 
+                                  zona == "Zona Sur")
+```
+
+#### 3.1.1 Verificación de datos únicos (Apartamento - Zona Sur)
+
+```{r D27, echo=TRUE}
+# Verificación de datos únicos
+unique(data_vivienda_tipoDos$tipo)
+unique(data_vivienda_tipoDos$zona)
+```
+
+#### 3.1.2 Tabla de datos filtrados (Apartamento - Zona Sur)
+
+```{r D28, echo=FALSE}
+# Tabla de datos filtrados (Apartamento - Zona Sur)
+vivienda_tipoDos = select(data_vivienda_tipoDos, -id, -barrio, -longitud, -latitud)
+```
+
+```{r D29, echo=TRUE}
+# Tabla de datos filtrados (Apartamento - Zona Sur)
+kable(head(vivienda_tipoDos,3), format = "markdown")
+```
+
+#### 3.1.3 Gráfico de mapa de los datos filtrados (Apartamento - Zona Sur)
+
+```{r D30, echo=TRUE}
+# Gráfico de mapa de los datos filtrados (Apartamento - Zona Sur)
+data <- data.frame(
+  zona = data_vivienda_tipoDos$zona,
+  barrio = data_vivienda_tipoDos$barrio,
+  longitud = data_vivienda_tipoDos$longitud,
+  latitud = data_vivienda_tipoDos$latitud
+)
+
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~barrio, radius = 5,
+                   color = ~case_when(
+                     zona == "Zona Sur" ~ "#1E6BB8",
+                     TRUE ~ "gray"
+                   )) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+
+map
+```
+
+**Análisis:** El conjunto de datos filtrados por los criterios de zona sur y tipo de vivienda apartamento presenta una cantidad de registros etiquetados de manera incorrecta en relación a los valores de las propiedades de barrio y zona, los cuales no corresponden a las coordenadas de latitud y longitud presentes.  Estas inconsistencias pueden afectar la credibilidad de la inmobiliaria y generar reprocesos con los clientes; debido a que la ubicación de la vivienda es un factor de influencia a la hora de la compra.
+
+Por lo anterior, se procederá a eliminar las viviendas que no se encuentren en la zona norte de la ciudad del conjunto de datos filtrados, las cuales se han identificados por tener una latitud mayor a 3.41396 y una longitud fuera del rango de 76.509 y -76.551, según la información catastral del país.
+
+```{r D31, echo=TRUE}
+# Eliminar las viviendas que no se encuentren segun los criterios
+data_vivienda_tipoDos_filtrado <- data_vivienda_tipoDos[
+  data_vivienda_tipoDos$longitud <= -76.509,]
+data_vivienda_tipoDos_filtrado <- data_vivienda_tipoDos_filtrado[
+  data_vivienda_tipoDos_filtrado$latitud >= -76.551,]
+data_vivienda_tipoDos_filtrado <- data_vivienda_tipoDos_filtrado[
+  data_vivienda_tipoDos_filtrado$latitud <= 3.41396,]
+
+data <- data.frame(
+  zona = data_vivienda_tipoDos_filtrado$zona,
+  barrio = data_vivienda_tipoDos_filtrado$barrio,
+  longitud = data_vivienda_tipoDos_filtrado$longitud,
+  latitud = data_vivienda_tipoDos_filtrado$latitud
+)
+
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~barrio, radius = 5,
+                   color = ~case_when(
+                     zona == "Zona Norte" ~ "#1E6BB8",
+                     TRUE ~ "gray"
+                   )) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+map
+```
+
+
+### 3.2 Análisis exploratorio
+
+**3.2.1 Gráfico del Precio de la vivienda vs Área construida**
+
+```{r D32, echo=TRUE}
+# Precio de la vivienda vs Área construida
+variable1 <- data_vivienda_tipoDos_filtrado$preciom
+variable2 <- data_vivienda_tipoDos_filtrado$areaconst
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Área construida"))
+scatter_plot
+```
+
+**3.2.2 Gráfico del Precio de la vivienda vs Estrato**
+
+```{r D33, echo=TRUE}
+# Precio de la vivienda vs Estrato
+variable1 <- data_vivienda_tipoDos_filtrado$preciom
+variable2 <- data_vivienda_tipoDos_filtrado$estrato
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Estrato"))
+scatter_plot
+```
+
+**3.2.3 Gráfico del Precio de la vivienda vs Número de baños**
+
+```{r D34, echo=TRUE}
+# Precio de la vivienda vs Número de baños
+variable1 <- data_vivienda_tipoDos_filtrado$preciom
+variable2 <- data_vivienda_tipoDos_filtrado$banios
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Número de baños"))
+scatter_plot
+```
+
+**3.2.4 Gráfico del Precio de la vivienda vs Número de habitaciones**
+
+```{r D35, echo=TRUE}
+# Precio de la vivienda vs Número de habitaciones
+variable1 <- data_vivienda_tipoDos_filtrado$preciom
+variable2 <- data_vivienda_tipoDos_filtrado$habitac
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+colores_puntos <- sapply(variable1, function(x) colores[findInterval(x, precios)])
+
+# Gráfico de dispersión
+scatter_plot <- plot_ly(x = variable1, y = variable2, mode = "markers", 
+                        type = "scatter", marker = list(size = 10, color = colores_puntos))
+scatter_plot <- scatter_plot %>% layout(xaxis = list(title = "Precio"),
+                                        yaxis = list(title = "Número de habitaciones"))
+scatter_plot
+```
+
+**3.2.5 Gráfico del Precio de la vivienda vs Zona**
+
+```{r D36, echo=TRUE}
+# Precio de la vivienda vs Zona
+data <- data.frame(
+  precio = data_vivienda_tipoDos_filtrado$preciom,
+  zona = data_vivienda_tipoDos_filtrado$zona,
+  barrio = data_vivienda_tipoDos_filtrado$barrio,
+  longitud = data_vivienda_tipoDos_filtrado$longitud,
+  latitud = data_vivienda_tipoDos_filtrado$latitud
+)
+
+# Precios y colores
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+
+# Calcular tamaños de radio basados en los precios
+tamanos_radio <- rep(5, nrow(data))  # Tamaño predeterminado
+for (i in 1:(length(precios)-1)) {
+  tamanos_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- i*2 + 5
+}
+
+# Colores basados en los precios
+colores_radio <- rep(colores[1], nrow(data))
+for (i in 1:(length(precios)-1)) {
+  colores_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- colores[i]
+}
+
+# Crear el mapa
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~precio, radius = ~tamanos_radio,
+                   color = ~colores_radio) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+
+map
+```
+
+**3.2.6 Mapa de correlaciones**
+
+```{r D37, echo=TRUE}
+# Mapa de correlaciones
+matrizcor <- cor(data_vivienda_tipoDos_filtrado[, c("preciom", "areaconst", 
+                                                    "estrato","banios", "habitac")])
+corrplot (matrizcor, method = "color", addCoef.col = "#FFC300")
+
+```
+
+Teniendo en cuenta el análisis exploratorio y el mapa de correlaciones, se observan correlaciones significativas entre diversos factores y los precios de las viviendas. En particular, destaca una asociación directa entre el precio y el área construida, con una correlación del 75%, seguida por la relación entre el precio y el número de baños, con un 72%. Además, se observa una conexión importante entre el precio y el estrato socioeconómico, con un 67%. Estos hallazgos ofrecen una comprensión crucial para los profesionales del sector inmobiliario y los compradores, informando decisiones clave en el mercado.
+
+### 3.3 Modelo de Regresión Lineal Múltiple
+
+(precio = f(área construida, estrato, número de cuartos, número de parqueaderos, número de baños ) ) 
+
+```{r D38, echo=TRUE}
+# Estimación de un modelo de regresión lineal múltiple
+modelo_VT02 <- lm(preciom ~ areaconst + estrato + habitac + parquea + banios, 
+                  data = data_vivienda_tipoDos_filtrado)
+# Resumen del modelo
+summary(modelo_VT02)
+```
+
+Este análisis de resultados se basa en un modelo de regresión lineal múltiple que intenta predecir el precio de una vivienda (preciom) utilizando múltiples variables predictoras, como el área construida (areaconst), el estrato, el número de habitaciones (habitac), el número de plazas de aparcamiento (parquea), y el número de baños (banios).
+
+#### **Coeficientes del Modelo:**
+- Intercepto (Intercept): -327.77338
+- Área construida (areaconst): 1.38843
+- Estrato: 66.87089
+- Número de habitaciones (habitac): -12.65029
+- Número de parqueaderos (parquea): 60.26351
+- Número de baños (banios): 50.17398
+
+#### **Interpretación de los Coeficientes:**
+**Intercepto:** Representa el valor esperado de la variable de respuesta (precio de la vivienda) cuando todas las variables predictoras son cero. En este caso, indica que el precio esperado de la vivienda es de -327.77 miles de pesos, lo cual podría necesitar una interpretación adicional debido a su valor negativo.
+
+**Área construida (areaconst):** Por cada unidad adicional de área construida, el precio de la vivienda aumenta en promedio en 1.38843 miles de pesos, manteniendo las otras variables constantes.
+
+**Estrato:** Cada incremento en una unidad del estrato está asociado con un aumento de 66.87 miles de pesos en el precio de la vivienda, manteniendo las demás variables constantes.
+
+**Número de habitaciones (habitac):** Este coeficiente indica que el número de habitaciones no tiene una relación significativa con el precio de la vivienda, dado que el p-valor es menor que 0.05. Por lo tanto, no se puede concluir que el número de habitaciones tenga un impacto significativo en el precio.
+
+**Número de parqueaderos (parquea):** Por cada parqueadero adicional, el precio de la vivienda aumenta en promedio en 60.26 miles de pesos, manteniendo las otras variables constantes.
+
+**Número de baños (banios):** Por cada baño adicional, el precio de la vivienda aumenta en promedio en 50.17 miles de pesos, manteniendo las otras variables constantes.
+
+#### **Estadísticas del Modelo:**
+**Residual Standard Error: 98.79.** Es una medida de la dispersión de los residuos alrededor de la línea de regresión. Indica cuánto varían los puntos de datos reales de las predicciones del modelo.
+
+**R-cuadrado Múltiple (Multiple R-squared): 0.7461.** Esto significa que aproximadamente el 74.61% de la variabilidad en el precio de la vivienda puede ser explicada por las variables predictoras incluidas en el modelo.
+
+**R-cuadrado Ajustado (Adjusted R-squared): 0.7453.** Es similar al R-cuadrado múltiple, pero ajustado para el número de predictores en el modelo. Ayuda a evitar la sobreestimación del rendimiento del modelo cuando se agregan más variables predictoras.
+
+**Estadístico F y p-valor:** El estadístico F prueba si al menos una de las variables predictoras tiene un efecto significativo en la variable de respuesta. En este caso, el valor extremadamente bajo del p-valor (< 2.2e-16) indica que al menos una de las variables predictoras es significativa en la predicción del precio de la vivienda.
+
+En resumen, el modelo parece ser significativo en general, con un R-cuadrado considerable. Sin embargo, el número de habitaciones no parece tener una influencia significativa en el precio de la vivienda según el modelo. Se sugiere explorar más a fondo esta variable y considerar posibles ajustes o transformaciones para mejorar la interpretación del modelo.
+
+### 3.4 Validación de supuestos del modelo
+
+**3.4.1 Linealidad y Homocedasticidad de los Residuos:**
+
+```{r D39, echo=TRUE}
+# Gráfico de valores ajustados vs residuos
+predicted <- predict(modelo_VT02)
+residuals <- residuals(modelo_VT02)
+
+plot_ly() %>%
+  add_trace(x = ~predicted, y = ~residuals, type = "scatter", mode = "markers", 
+            marker = list(color = "#1E6BB8")) %>%
+  add_trace(x = predicted, y = rep(0, length(predicted)),
+            type = "scatter", mode = "lines", line = list(color = "#04AA6D", 
+                                                          dash = "dash")) %>%
+  layout(title = "Gráfico de Valores Ajustados vs Residuos",
+         xaxis = list(title = "Valores Ajustados"),
+         yaxis = list(title = "Residuos"))
+
+# Prueba de Breusch-Pagan
+library(lmtest)
+bptest(modelo_VT02)
+```
+
+Esta prueba evaluó si existe heterocedasticidad en los residuos del modelo. En este caso, el valor estadístico (BP) es 697.61 con 5 grados de libertad y un valor p muy pequeño (2.2e-16), lo que sugiere evidencia significativa de heterocedasticidad en los residuos.
+
+**3.4.2 Normalidad de los Residuos:**
+
+```{r D40, echo=TRUE}
+# Normalidad de los Residuos
+shapiro.test(residuals)
+```
+
+Esta prueba evaluó si los residuos se distribuyen normalmente. El valor p es menor que 0.05 (2.2e-16), lo que indica que los residuos no siguen una distribución normal.
+
+**3.4.3 Supuesto de Varianza Constante:**
+
+```{r D41, echo=TRUE}
+# Supuesto de Varianza Constante
+gqtest(modelo_VT02)
+```
+
+Esta prueba evaluó si la varianza de los errores es constante en todo el rango de los datos. El valor p es menor que 0.05 (2.2e-16), lo que sugiere que hay evidencia de que la varianza no es constante.
+
+**3.4.4 Independencia de los errores:**
+
+```{r D42, echo=TRUE}
+# Independencia de los errores
+dwtest(modelo_VT02)
+```
+
+Esta prueba evaluó si hay autocorrelación en los residuos. El valor p es mayor que 0.05 (0.0003692), lo que sugiere que no hay evidencia de autocorrelación en los residuos.
+
+**3.4.4 Multicolinealidad:**
+
+```{r D43, echo=TRUE}
+# Multicolinealidad
+par(mfrow = c(2, 2))
+plot(modelo_VT02)
+# Factores de inflación de la varianza (VIF)
+vif(modelo_VT02)
+```
+
+### 3.5 Predección del precio de la vivienda
+
+```{r D44, echo=TRUE}
+# Para estrato = 4
+nueva_vivienda_est_5 <- data.frame(
+  areaconst = 300,
+  parquea = 3,
+  banios = 3,
+  habitac = 5,
+  estrato = 5
+)
+
+# Para estrato = 5
+nueva_vivienda_est_6 <- data.frame(
+  areaconst = 300,
+  parquea = 3,
+  banios = 3,
+  habitac = 5,
+  estrato = 6
+)
+
+#  obtener las predicciones del precio de la vivienda utilizando el modelo
+prediccion_est_5 <- predict(modelo_VT02, newdata = nueva_vivienda_est_5, 
+                            interval = "confidence")
+print(prediccion_est_5)
+prediccion_est_6 <- predict(modelo_VT02, newdata = nueva_vivienda_est_6,
+                            interval = "confidence")
+print(prediccion_est_6)
+```
+
+### 3.6 Potenciales ofertas que responda a la solicitud de la vivienda 1
+
+```{r D45, echo=TRUE}
+
+# Filtrar el conjunto de datos con los criterios proporcionados
+ofertas_vivienda_Dos <- subset(data_vivienda_tipoDos_filtrado,
+                               areaconst <= 300 &
+                               parquea <= 3 &
+                               banios == 3 &
+                               (habitac == 4 | habitac == 5) &
+                               (estrato == 5 | estrato == 6) &
+                               preciom <= 850)
+
+# Cantidad de viviendas que cumplen los criterios proporcionados
+total_observaciones2 <- nrow(ofertas_vivienda_Dos)
+print(total_observaciones2)
+
+ofertas_tipo_Dos = select(ofertas_vivienda_Dos, -id, -zona, -tipo, -longitud, 
+                          -latitud)
+ofertas_tipo_Dos <- ofertas_tipo_Dos[order(ofertas_tipo_Dos$areaconst, 
+                                           ofertas_tipo_Dos$preciom, 
+                                           decreasing = TRUE),]
+
+kable(head(ofertas_tipo_Dos,5), format = "markdown")
+```
+
+```{r D46, echo=FALSE}
+# Viviendas para la Oferta 01
+data <- data.frame(
+  precio = ofertas_vivienda_Dos$preciom,
+  barrio = ofertas_vivienda_Dos$barrio,
+  longitud = ofertas_vivienda_Dos$longitud,
+  latitud = ofertas_vivienda_Dos$latitud
+)
+
+# Precios y colores
+precios <- c(0, 500, 1000, 1500, Inf)
+colores <- c("#1E6BB8", "#114477", "#F1488A", "#8A083B")
+
+# Calcular tamaños de radio basados en los precios
+tamanos_radio <- rep(5, nrow(data))  # Tamaño predeterminado
+for (i in 1:(length(precios)-1)) {
+  tamanos_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- i*2 + 5
+}
+
+# Colores basados en los precios
+colores_radio <- rep(colores[1], nrow(data))
+for (i in 1:(length(precios)-1)) {
+  colores_radio[data$precio >= precios[i] & data$precio < precios[i+1]] <- colores[i]
+}
+
+# Crear el mapa
+map <- leaflet(data = data) %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~longitud, lat = ~latitud, 
+                   popup = ~precio, radius = ~tamanos_radio,
+                   color = ~colores_radio) %>%
+  setView(lng = -76.5225, lat = 3.4372, zoom = 12)
+map
+```
+
+**Análisis:** Despues de analizar el modelo de regresión lineal múltiple detenidamente conforme a las necesidades del usuario que realizó la solicitud de vivienda número dos, se ha identificado que los inmuebles que mejor se ajustan a sus requerimientos son los siguientes apartamentos: 7490, 5216, 6830, 6132 y 5873. Estos están ubicados en la zona sur de la ciudad y se caracterizan por ser de cuarto y quinto piso. Cada uno de ellos cuenta con cuatro habitaciones, tres baños y dos parqueaderos. Sus dimensiones oscilan entre 185 y 160 metros cuadrados, con un rango de precio entre 450 y 320 millones de pesos. Aunque se han evaluado otros inmuebles que cumplen en gran medida con los criterios establecidos, estos difieren principalmente en el área total construida y en la cantidad de parqueaderos. Esta variación se debe a la falta de una propiedad en la base de datos que cumpla con todos los criterios requeridos.
+
+
+***
+
+<br>
+
+## 4. Anexos
+
+Origen de Datos --> [Clic Aquí](https://raw.githubusercontent.com/aperezn298/DatasetsPUJC/main/vivienda_faltantes.csv)
+
+Código fuente --> [Clic Aquí]()
+
+***
+
+<br>
+
+## 5. Autor
+
+*Alvaro Perez Niño – Estudiante*
+
+Maestría en Ciencia de Datos
+
+Universidad Javeriana - Cali
+
+**Código:** 8986470
+
+**Email:** aperezn892@javerianacali.edu.co
